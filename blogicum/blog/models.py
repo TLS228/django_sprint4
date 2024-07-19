@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 User = get_user_model()
 
 
-class TimeStampedModel(models.Model):  # Изменил имя на более содержательное
+class TimeStampedModel(models.Model):
     """
     Абстрактная модель.
     Добавляет к модели дату создания и отметку о публикации.
@@ -23,7 +23,7 @@ class TimeStampedModel(models.Model):  # Изменил имя на более �
         abstract = True
 
 
-class Category(TimeStampedModel):  # Изменил название родительского класса
+class Category(TimeStampedModel):
     title = models.CharField(max_length=256, verbose_name='Заголовок')
     description = models.TextField(verbose_name='Описание')
     slug = models.SlugField(
@@ -40,7 +40,7 @@ class Category(TimeStampedModel):  # Изменил название родит�
         return self.title
 
 
-class Location(TimeStampedModel):  # Изменил название родительского класса
+class Location(TimeStampedModel):
     name = models.CharField(max_length=256, verbose_name='Название места')
 
     class Meta:
@@ -51,7 +51,7 @@ class Location(TimeStampedModel):  # Изменил название родит�
         return self.name
 
 
-class Post(TimeStampedModel):  # Изменил название родительского класса
+class Post(TimeStampedModel):
     title = models.CharField(max_length=256, verbose_name='Заголовок')
     text = models.TextField(verbose_name='Текст')
     image = models.ImageField(
@@ -81,12 +81,6 @@ class Post(TimeStampedModel):  # Изменил название родител�
         verbose_name = 'публикация'
         verbose_name_plural = 'Публикации'
         ordering = ('-pub_date',)
-        constraints = (
-            models.UniqueConstraint(
-                fields=('title', 'text', 'author'),
-                name='Unique post constraint',
-            ),
-        )
 
     def get_absolute_url(self):
         return reverse("post_detail", kwargs={"pk": self.pk})

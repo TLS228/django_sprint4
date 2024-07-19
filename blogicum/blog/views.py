@@ -9,12 +9,12 @@ from blog.forms import ProfileUpdateForm, PostForm, CommentForm
 from blog.constants import POSTS_PER_PAGE  # изменение имени константы
 
 
-def public_posts(posts_queryset=None):
+def public_posts(posts=None):
     """Функция для фильтрации видимых постов."""
-    if posts_queryset is None:
-        posts_queryset = Post.objects.all()
+    if posts is None:
+        posts = Post.objects.all()
 
-    return posts_queryset.select_related(
+    return posts.select_related(
         'author',
         'category',
         'location'
@@ -24,12 +24,12 @@ def public_posts(posts_queryset=None):
         category__is_published=True
     ).annotate(
         comment_count=Count('comments')
-    ).order_by('-pub_date')  # Убедитесь, что сортировка по убыванию
+    ).order_by('-pub_date')
 
 
-def paginate_queryset(request, queryset, per_page):
+def paginate_queryset(request, queryset, per_page=10):
     paginator = Paginator(queryset, per_page)
-    page_number = request.GET.get('page')
+    page_number = request.GET.get('page', 1)
     return paginator.get_page(page_number)
 
 
@@ -47,10 +47,10 @@ def post_detail(request, post_id):
             pub_date__lte=timezone.now(),
             category__is_published=True
         )
-    comments = post.comments.order_by('created_at')
+
     return render(request, 'blog/detail.html', {
         'post': post,
-        'comments': comments,
+        'comments': post.comments.all(),
         'form': CommentForm()
     })
 
@@ -58,12 +58,15 @@ def post_detail(request, post_id):
 @login_required
 def create_post(request):
     form = PostForm(request.POST or None, files=request.FILES or None)
-    if form.is_valid():
-        post = form.save(commit=False)
-        post.author = request.user
-        post.save()
-        return redirect('blog:profile', username=request.user)
-    return render(request, 'blog/create.html', {'form': form})
+
+    if not form.is_valid():
+        return render(request, 'blog/create.html', {'form': form})
+
+    post = form.save(commit=False)
+    post.author = request.user
+    post.save()
+
+    return redirect('blog:profile', username=request.user)
 
 
 @login_required
@@ -75,8 +78,10 @@ def edit_post(request, post_id):
     form = PostForm(request.POST or None,
                     files=request.FILES or None, instance=post)
     if form.is_valid():
-        post.save()
+        if form.has_changed():
+            post = form.save()
         return redirect('blog:post_detail', post_id=post_id)
+
     return render(request, 'blog/create.html', {'form': form})
 
 
@@ -107,21 +112,21 @@ def add_comment(request, post_id):
 def edit_comment(request, post_id, comment_id):
     comment = get_object_or_404(Comment, pk=comment_id, author=request.user)
     form = CommentForm(request.POST or None, instance=comment)
-    context = {'form': form, 'comment': comment}
     if form.is_valid():
         comment.save()
         return redirect('blog:post_detail', post_id=post_id)
-    return render(request, 'blog/comment.html', context)
+    return render(request, 'blog/comment.html',
+                  {'form': form, 'comment': comment})
 
 
 @login_required
 def delete_comment(request, post_id, comment_id):
     comment = get_object_or_404(Comment, pk=comment_id, author=request.user)
-    context = {'comment': comment}
     if request.method == 'POST':
         comment.delete()
         return redirect('blog:post_detail', post_id=post_id)
-    return render(request, 'blog/comment.html', context)
+    return render(request, 'blog/comment.html',
+                  {'comment': comment})
 
 
 def profile(request, username):
@@ -148,11 +153,14 @@ def edit_profile(request):
 
 
 def category(request, category_slug):
-    category = get_object_or_404(Category,
-                                 slug=category_slug,
-                                 is_published=True
-                                 )
-    posts = public_posts(category.posts.all()).order_by('-pub_date')
+    category = get_object_or_404(
+        Category,
+        slug=category_slug,
+        is_published=True,
+    )
+    posts = public_posts(category.posts.all())
     page_obj = paginate_queryset(request, posts, POSTS_PER_PAGE)
-    return render(request, 'blog/category.html',
-                  {'page_obj': page_obj, 'category': category})
+    return render(request, 'blog/category.html', {
+        'page_obj': page_obj,
+        'category': category,
+    })
