@@ -4,16 +4,13 @@ from django.core.paginator import Paginator
 from django.db.models import Count
 from django.utils import timezone
 
-from blog.models import Category, Post, Comment, User
-from blog.forms import ProfileUpdateForm, PostForm, CommentForm
-from blog.constants import POSTS_PER_PAGE  # изменение имени константы
+from blog.models import Category, Comment, Post, User
+from blog.forms import CommentForm, ProfileUpdateForm, PostForm
+from blog.constants import POSTS_PER_PAGE
 
 
-def public_posts(posts=None):
+def public_posts(posts=Post.objects):
     """Функция для фильтрации видимых постов."""
-    if posts is None:
-        posts = Post.objects.all()
-
     return posts.select_related(
         'author',
         'category',
@@ -27,8 +24,8 @@ def public_posts(posts=None):
     ).order_by('-pub_date')
 
 
-def paginate_queryset(request, queryset, per_page=10):
-    paginator = Paginator(queryset, per_page)
+def paginate_queryset(request, queryset, posts_per_page):
+    paginator = Paginator(queryset, posts_per_page)
     page_number = request.GET.get('page', 1)
     return paginator.get_page(page_number)
 
@@ -41,13 +38,7 @@ def index(request):
 def post_detail(request, post_id):
     post = get_object_or_404(Post, pk=post_id)
     if post.author != request.user:
-        post = get_object_or_404(
-            Post, pk=post_id,
-            is_published=True,
-            pub_date__lte=timezone.now(),
-            category__is_published=True
-        )
-
+        post = get_object_or_404(public_posts(Post.objects.filter(pk=post_id)))
     return render(request, 'blog/detail.html', {
         'post': post,
         'comments': post.comments.all(),
@@ -58,14 +49,11 @@ def post_detail(request, post_id):
 @login_required
 def create_post(request):
     form = PostForm(request.POST or None, files=request.FILES or None)
-
     if not form.is_valid():
         return render(request, 'blog/create.html', {'form': form})
-
     post = form.save(commit=False)
     post.author = request.user
     post.save()
-
     return redirect('blog:profile', username=request.user)
 
 
@@ -79,7 +67,7 @@ def edit_post(request, post_id):
                     files=request.FILES or None, instance=post)
     if form.is_valid():
         if form.has_changed():
-            post = form.save()
+            form.save()
         return redirect('blog:post_detail', post_id=post_id)
 
     return render(request, 'blog/create.html', {'form': form})
@@ -131,16 +119,16 @@ def delete_comment(request, post_id, comment_id):
 
 def profile(request, username):
     profile_user = get_object_or_404(User, username=username)
-    if request.user == profile_user:
-        posts = profile_user.posts.annotate(
-            comment_count=Count('comments')).order_by('-pub_date'
-                                                      )
-    else:
-        posts = public_posts().filter(author=profile_user)
-
+    posts = public_posts(
+        profile_user.posts.all()
+    ) if request.user != profile_user else profile_user.posts.annotate(
+        comment_count=Count('comments')
+    ).order_by('-pub_date')
     page_obj = paginate_queryset(request, posts, POSTS_PER_PAGE)
-    return render(request, 'blog/profile.html',
-                  {'profile': profile_user, 'page_obj': page_obj})
+    return render(request, 'blog/profile.html', {
+        'profile': profile_user,
+        'page_obj': page_obj
+    })
 
 
 @login_required
@@ -158,8 +146,10 @@ def category(request, category_slug):
         slug=category_slug,
         is_published=True,
     )
-    posts = public_posts(category.posts.all())
-    page_obj = paginate_queryset(request, posts, POSTS_PER_PAGE)
+    page_obj = paginate_queryset(request, public_posts(
+        category.posts.all()),
+        POSTS_PER_PAGE
+    )
     return render(request, 'blog/category.html', {
         'page_obj': page_obj,
         'category': category,
