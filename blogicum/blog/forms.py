@@ -22,9 +22,6 @@ class PostForm(forms.ModelForm):
         widgets = {
             'pub_date': forms.DateInput(attrs={'type': 'datetime-local'})}
 
-    def clean(self):
-        super().clean()
-
 
 class CommentForm(forms.ModelForm):
 
