@@ -6,32 +6,34 @@ from django.utils import timezone
 
 from blog.models import Category, Comment, Post, User
 from blog.forms import CommentForm, ProfileUpdateForm, PostForm
-from blog.constants import POSTS_PER_PAGE
 
 
-def public_posts(posts=Post.objects):
+def public_posts(posts=Post.objects, filter_published=True):
     """Функция для фильтрации видимых постов."""
-    return posts.select_related(
+    query = posts.select_related(
         'author',
         'category',
         'location'
-    ).filter(
-        pub_date__lte=timezone.now(),
-        is_published=True,
-        category__is_published=True
-    ).annotate(
+    )
+    if filter_published:
+        query = query.filter(
+            pub_date__lte=timezone.now(),
+            is_published=True,
+            category__is_published=True
+        )
+    return query.annotate(
         comment_count=Count('comments')
     ).order_by('-pub_date')
 
 
-def paginate_queryset(request, queryset, posts_per_page):
+def paginate_queryset(request, queryset, posts_per_page=10):
     paginator = Paginator(queryset, posts_per_page)
     page_number = request.GET.get('page', 1)
     return paginator.get_page(page_number)
 
 
 def index(request):
-    page_obj = paginate_queryset(request, public_posts(), POSTS_PER_PAGE)
+    page_obj = paginate_queryset(request, public_posts())
     return render(request, 'blog/index.html', {'page_obj': page_obj})
 
 
@@ -118,15 +120,13 @@ def delete_comment(request, post_id, comment_id):
 
 
 def profile(request, username):
-    profile_user = get_object_or_404(User, username=username)
+    author = get_object_or_404(User, username=username)
     posts = public_posts(
-        profile_user.posts.all()
-    ) if request.user != profile_user else profile_user.posts.annotate(
-        comment_count=Count('comments')
-    ).order_by('-pub_date')
-    page_obj = paginate_queryset(request, posts, POSTS_PER_PAGE)
+        author.posts.all(), filter_published=request.user != author
+    )
+    page_obj = paginate_queryset(request, posts)
     return render(request, 'blog/profile.html', {
-        'profile': profile_user,
+        'profile': author,
         'page_obj': page_obj
     })
 
@@ -148,7 +148,6 @@ def category(request, category_slug):
     )
     page_obj = paginate_queryset(request, public_posts(
         category.posts.all()),
-        POSTS_PER_PAGE
     )
     return render(request, 'blog/category.html', {
         'page_obj': page_obj,
